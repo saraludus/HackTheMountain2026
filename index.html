@@ -127,7 +127,8 @@ function initRecognition() {
   recognition = new SR();
   recognition.lang = "en-US";
   recognition.interimResults = true;
-  recognition.continuous = false; // we restart manually
+  recognition.continuous = true;
+  recognition.interimResults = true;
 
   recognition.onstart = () => {
     state.micStatus = "listening";
@@ -159,29 +160,29 @@ function initRecognition() {
   };
 
   recognition.onend = () => {
-    if (isRecogActive) restartRecognition();
-    else { state.micStatus = "idle"; render(); }
+  state.micStatus = "idle";
+  render();
   };
-}
-
-function restartRecognition() {
-  try { recognition.start(); } catch(e) {}
 }
 
 function startMic() {
   if (!recognition) return;
+  if (isRecogActive) return;
+
   isRecogActive = true;
   state.transcript = "";
   state.interim = "";
   state.micStatus = "listening";
-  try { recognition.start(); } catch(e) {}
+
+  recognition.start();
 }
 
 function stopMic() {
   isRecogActive = false;
   state.interim = "";
   state.micStatus = "idle";
-  try { recognition.stop(); } catch(e) {}
+
+  recognition.stop();
 }
 
 // ─── APP LOGIC ───────────────────────────────────────────────────────────────
