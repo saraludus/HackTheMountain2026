@@ -74,7 +74,12 @@ function compareLines(expectedText, spokenText) {
       continue;
     }
 
-    if (spoken[si] === exp) {
+    const match =
+      spoken[si] === exp ||
+      spoken[si]?.includes(exp) ||
+      exp.includes(spoken[si]);
+
+    if (match) {
       results.push({ word: exp, status: "correct" });
       si++;
     } else {
@@ -87,7 +92,8 @@ function compareLines(expectedText, spokenText) {
         si = foundAt + 1;
         results.push({ word: exp, status: "correct" });
       } else {
-        results.push({ word: exp, status: "missed" });
+        // results.push({ word: exp, status: "missed" });
+        results.push({ word: exp, status: "pending" });
         // don't advance si — spoken word may match next expected
       }
     }
@@ -97,7 +103,7 @@ function compareLines(expectedText, spokenText) {
 }
 
 function isComplete(results) {
-  return results.length > 0 && results.every(r => r.status === "correct");
+  return results.filter(r => r.status === "correct").length >= results.length * 0.85;
 }
 
 // ─── STATE ──────────────────────────────────────────────────────────────────
@@ -117,6 +123,9 @@ let state = {
 let recognition = null;
 let autoAdvanceTimer = null;
 let isRecogActive = false;
+let restartTimeout = null;
+let restartLock = false;
+let advancing = false;
 
 // ─── SPEECH ─────────────────────────────────────────────────────────────────
 
@@ -136,18 +145,31 @@ function initRecognition() {
   };
 
   recognition.onresult = (e) => {
-    let interim = "", final = "";
+    let interim = "";
+    let latestFinal = "";
+
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) final += t;
-      else interim += t;
+
+      if (e.results[i].isFinal) {
+        latestFinal += t;
+      } else {
+        interim += t;
+      }
     }
-    if (final) {
-      state.transcript = (state.transcript + " " + final).trim();
+
+    if (latestFinal.trim()) {
+      const cleaned = latestFinal.trim();
+
+      if (cleaned !== state.transcript.trim()) {
+        state.transcript = cleaned;
+      }
       state.interim = "";
-    } else {
-      state.interim = interim;
+    } 
+    else {
+      state.interim = interim.trim();
     }
+
     handleTranscriptUpdate();
     render();
   };
@@ -160,56 +182,113 @@ function initRecognition() {
   };
 
   recognition.onend = () => {
-  state.micStatus = "idle";
-  render();
+    if (!isRecogActive) return;
+
+    // invisible restart loop with backoff
+    setTimeout(() => {
+      try {
+        recognition.start();
+      } catch (e) {
+        // retry once more if Chrome blocks fast restart
+        setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (e2) {}
+        }, 800);
+      }
+    }, 400);
   };
 }
 
 function startMic() {
-  if (!recognition) return;
-  if (isRecogActive) return;
+  if (!recognition || isRecogActive) return;
+  if (restartLock) return;
 
   isRecogActive = true;
+  restartLock = true;
+
   state.transcript = "";
   state.interim = "";
   state.micStatus = "listening";
 
-  recognition.start();
+  try {
+    recognition.start();
+  } catch (e) {}
+
+  // unlock after startup window
+  setTimeout(() => {
+    restartLock = false;
+  }, 1000);
 }
 
 function stopMic() {
   isRecogActive = false;
+
   state.interim = "";
   state.micStatus = "idle";
 
-  recognition.stop();
+  try {
+    recognition.stop();
+  } catch (e) {}
 }
 
 // ─── APP LOGIC ───────────────────────────────────────────────────────────────
 
 function handleTranscriptUpdate() {
   if (!state.isRunning) return;
-  const line = state.script.lines[state.currentLineIndex];
-  if (!line) return;
 
-  const full = state.interim
-    ? (state.transcript + " " + state.interim).trim()
-    : state.transcript;
+  const current = state.script.lines[state.currentLineIndex];
+  const next = state.script.lines[state.currentLineIndex + 1];
 
-  const results = compareLines(line.text, full);
-  state.lineResults[line.id] = results;
+  const full = (state.transcript + " " + state.interim).trim();
 
-  if (isComplete(results) && !autoAdvanceTimer) {
+  if (!full) return;
+
+  // check CURRENT line loosely
+  const currentResults = compareLines(current.text, full);
+  state.lineResults[current.id] = currentResults;
+
+  const currentMatch =
+    currentResults.filter(r => r.status === "correct").length /
+    currentResults.length;
+
+  // ALSO check NEXT line at same time (key fix)
+  if (next) {
+    const nextResults = compareLines(next.text, full);
+
+    const nextMatch =
+      nextResults.filter(r => r.status === "correct").length /
+      nextResults.length;
+
+    // if user already started next line → advance immediately
+    if (nextMatch > 0.6) {
+      if (advancing) return;
+      advanceLine();
+      return;
+    }
+  }
+
+  // fallback: normal current-line progression
+  if (currentMatch > 0.75 && !autoAdvanceTimer) {
     autoAdvanceTimer = setTimeout(() => {
+      if (advancing) return;
       advanceLine();
       autoAdvanceTimer = null;
-    }, 800);
+    }, 1200);
   }
 }
 
 function advanceLine() {
-  if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+  if (advancing) return;
+  advancing = true;
+
+  if (autoAdvanceTimer) {
+    clearTimeout(autoAdvanceTimer);
+    autoAdvanceTimer = null;
+  }
+
   const next = state.currentLineIndex + 1;
+
   if (next >= state.script.lines.length) {
     stopMic();
     state.isRunning = false;
@@ -219,7 +298,13 @@ function advanceLine() {
     state.transcript = "";
     state.interim = "";
   }
+
   render();
+
+  // unlock AFTER UI/state update (important)
+  setTimeout(() => {
+    advancing = false;
+  }, 300);
 }
 
 function toggleMic() {
@@ -313,7 +398,7 @@ function render() {
 
   app.innerHTML = `
     <div class="header">
-      <span class="header-title">🎭 Theater Practice</span>
+      <span class="header-title">🎭 Theatrix</span>
       <span class="header-progress">${sessionDone ? "Complete!" : `${currentLineIndex + 1} / ${script.lines.length}`}</span>
     </div>
 
