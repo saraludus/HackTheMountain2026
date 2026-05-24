@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Theater Practice</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface2: #1a1a26;
+      --border: #2a2a3a;
+      --accent: #c8a96e;
+      --accent-dim: #8a7048;
+      --correct: #4ade80;
+      --missed: #f87171;
+      --pending: #3a3a52;
+      --pending-text: #5a5a7a;
+      --text: #e8e0d0;
+      --text-dim: #6a6a8a;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      overflow: hidden;
+    }
+
+    #app {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      max-width: 680px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    /* Subtle noise texture overlay */
+    #app::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* HEADER */
+    .header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+
+    .header-progress {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* SCRIPT PICKER */
+    .script-picker {
+      display: flex;
+      gap: 8px;
+      padding: 10px 20px;
+      overflow-x: auto;
+      flex-shrink: 0;
+      scrollbar-width: none;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      z-index: 1;
+    }
+    .script-picker::-webkit-scrollbar { display: none; }
+
+    .script-chip {
+      white-space: nowrap;
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.05em;
+    }
+    .script-chip:hover { border-color: var(--accent-dim); color: var(--accent); }
+    .script-chip.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(200, 169, 110, 0.08);
+    }
+
+    /* LEGEND */
+    .legend {
+      display: flex;
+      gap: 20px;
+      padding: 8px 20px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .legend-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+    }
+
+    /* LINES AREA */
+    .lines-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 16px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+      position: relative;
+      z-index: 1;
+    }
+
+    .line-card {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: var(--surface);
+      border: 1px solid transparent;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .line-card.active {
+      border-color: var(--accent-dim);
+      background: var(--surface2);
+    }
+
+    .character-label {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-dim);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .words-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px 0;
+      line-height: 1.6;
+    }
+
+    .word {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      margin-right: 8px;
+      transition: color 0.15s;
+    }
+    .word.correct { color: var(--correct); }
+    .word.missed { color: var(--missed); text-decoration: underline; text-decoration-style: wavy; }
+    .word.pending { color: var(--pending-text); }
+
+    /* DONE CARD */
+    .done-card {
+      text-align: center;
+      padding: 32px 20px;
+    }
+    .done-icon { font-size: 48px; margin-bottom: 12px; }
+    .done-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 24px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .done-sub { font-size: 12px; color: var(--text-dim); }
+
+    /* TRANSCRIPT BAR */
+    .transcript-bar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      flex-shrink: 0;
+      min-height: 44px;
+      position: relative;
+      z-index: 1;
+    }
+    .transcript-label {
+      font-size: 10px;
+      color: var(--accent-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding-top: 2px;
+      flex-shrink: 0;
+    }
+    .transcript-text {
+      font-size: 13px;
+      color: var(--text-dim);
+      font-style: italic;
+      line-height: 1.4;
+    }
+
+    /* CONTROLS */
+    .controls {
+      padding: 14px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .mic-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 36px;
+      border-radius: 50px;
+      border: none;
+      cursor: pointer;
+      font-family: 'DM Mono', monospace;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      transition: all 0.2s;
+    }
+    .mic-btn.idle {
+      background: var(--accent);
+      color: #0a0a0f;
+      box-shadow: 0 4px 24px rgba(200, 169, 110, 0.3);
+    }
+    .mic-btn.idle:hover {
+      box-shadow: 0 6px 32px rgba(200, 169, 110, 0.5);
+      transform: translateY(-1px);
+    }
+    .mic-btn.listening {
+      background: var(--missed);
+      color: #fff;
+      box-shadow: 0 4px 24px rgba(248, 113, 113, 0.3);
+      animation: pulse-btn 1.5s ease-in-out infinite;
+    }
+    .mic-btn.error {
+      background: var(--surface2);
+      color: var(--missed);
+      border: 1px solid var(--missed);
+    }
+
+    @keyframes pulse-btn {
+      0%, 100% { box-shadow: 0 4px 24px rgba(248, 113, 113, 0.3); }
+      50% { box-shadow: 0 4px 36px rgba(248, 113, 113, 0.6); }
+    }
+
+    .skip-btn {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      padding: 6px 16px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .skip-btn:hover { color: var(--accent); }
+
+    /* Mic pulse indicator */
+    .mic-pulse {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    /* No speech API warning */
+    .warning {
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: var(--missed);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin: 12px 16px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ─── DATA ───────────────────────────────────────────────────────────────────
+
+const SCRIPTS = [
+  {
+    id: "hamlet",
+    title: "Hamlet — To Be or Not to Be",
+    lines: [
+      { id: "h1", character: "HAMLET", text: "to be or not to be that is the question" },
+      { id: "h2", character: "HAMLET", text: "whether tis nobler in the mind to suffer" },
+      { id: "h3", character: "HAMLET", text: "the slings and arrows of outrageous fortune" },
+      { id: "h4", character: "HAMLET", text: "or to take arms against a sea of troubles" },
+      { id: "h5", character: "HAMLET", text: "and by opposing end them" },
+    ],
+  },
+  {
+    id: "romeo",
+    title: "Romeo & Juliet — Balcony",
+    lines: [
+      { id: "r1", character: "ROMEO",  text: "but soft what light through yonder window breaks" },
+      { id: "r2", character: "ROMEO",  text: "it is the east and juliet is the sun" },
+      { id: "r3", character: "ROMEO",  text: "arise fair sun and kill the envious moon" },
+      { id: "r4", character: "JULIET", text: "o romeo romeo wherefore art thou romeo" },
+      { id: "r5", character: "JULIET", text: "deny thy father and refuse thy name" },
+    ],
+  },
+  {
+    id: "macbeth",
+    title: "Macbeth — Tomorrow",
+    lines: [
+      { id: "m1", character: "MACBETH", text: "tomorrow and tomorrow and tomorrow" },
+      { id: "m2", character: "MACBETH", text: "creeps in this petty pace from day to day" },
+      { id: "m3", character: "MACBETH", text: "to the last syllable of recorded time" },
+      { id: "m4", character: "MACBETH", text: "and all our yesterdays have lighted fools" },
+      { id: "m5", character: "MACBETH", text: "the way to dusty death" },
+    ],
+  },
+];
+
+// ─── LOGIC ──────────────────────────────────────────────────────────────────
+
+function normalizeWord(w) {
+  return w.toLowerCase().replace(/[^a-z0-9']/g, "");
+}
+
+function compareLines(expectedText, spokenText) {
+  const expected = expectedText.split(/\s+/).filter(Boolean).map(normalizeWord);
+  const spoken   = spokenText.trim().split(/\s+/).filter(Boolean).map(normalizeWord);
+
+  if (!spoken.length || (spoken.length === 1 && !spoken[0])) {
+    return expected.map(w => ({ word: w, status: "pending" }));
+  }
+
+  const results = [];
+  let si = 0;
+
+  for (let i = 0; i < expected.length; i++) {
+    const exp = expected[i];
+
+    if (si >= spoken.length) {
+      results.push({ word: exp, status: "pending" });
+      continue;
+    }
+
+    if (spoken[si] === exp) {
+      results.push({ word: exp, status: "correct" });
+      si++;
+    } else {
+      // lookahead
+      let foundAt = -1;
+      for (let j = si + 1; j <= si + 3 && j < spoken.length; j++) {
+        if (spoken[j] === exp) { foundAt = j; break; }
+      }
+      if (foundAt !== -1) {
+        si = foundAt + 1;
+        results.push({ word: exp, status: "correct" });
+      } else {
+        results.push({ word: exp, status: "missed" });
+        // don't advance si — spoken word may match next expected
+      }
+    }
+  }
+
+  return results;
+}
+
+function isComplete(results) {
+  return results.length > 0 && results.every(r => r.status === "correct");
+}
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+
+let state = {
+  script: SCRIPTS[0],
+  currentLineIndex: 0,
+  lineResults: {},   // id -> WordResult[]
+  isRunning: false,
+  sessionDone: false,
+  transcript: "",
+  interim: "",
+  micStatus: "idle", // idle | listening | error
+  noSpeechAPI: false,
+};
+
+let recognition = null;
+let autoAdvanceTimer = null;
+let isRecogActive = false;
+
+// ─── SPEECH ─────────────────────────────────────────────────────────────────
+
+function initRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { state.noSpeechAPI = true; render(); return; }
+
+  recognition = new SR();
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.continuous = false; // we restart manually
+
+  recognition.onstart = () => {
+    state.micStatus = "listening";
+    render();
+  };
+
+  recognition.onresult = (e) => {
+    let interim = "", final = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t;
+      else interim += t;
+    }
+    if (final) {
+      state.transcript = (state.transcript + " " + final).trim();
+      state.interim = "";
+    } else {
+      state.interim = interim;
+    }
+    handleTranscriptUpdate();
+    render();
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error === "no-speech" && isRecogActive) { restartRecognition(); return; }
+    if (e.error === "aborted") return;
+    state.micStatus = "error";
+    render();
+  };
+
+  recognition.onend = () => {
+    if (isRecogActive) restartRecognition();
+    else { state.micStatus = "idle"; render(); }
+  };
+}
+
+function restartRecognition() {
+  try { recognition.start(); } catch(e) {}
+}
+
+function startMic() {
+  if (!recognition) return;
+  isRecogActive = true;
+  state.transcript = "";
+  state.interim = "";
+  state.micStatus = "listening";
+  try { recognition.start(); } catch(e) {}
+}
+
+function stopMic() {
+  isRecogActive = false;
+  state.interim = "";
+  state.micStatus = "idle";
+  try { recognition.stop(); } catch(e) {}
+}
+
+// ─── APP LOGIC ───────────────────────────────────────────────────────────────
+
+function handleTranscriptUpdate() {
+  if (!state.isRunning) return;
+  const line = state.script.lines[state.currentLineIndex];
+  if (!line) return;
+
+  const full = state.interim
+    ? (state.transcript + " " + state.interim).trim()
+    : state.transcript;
+
+  const results = compareLines(line.text, full);
+  state.lineResults[line.id] = results;
+
+  if (isComplete(results) && !autoAdvanceTimer) {
+    autoAdvanceTimer = setTimeout(() => {
+      advanceLine();
+      autoAdvanceTimer = null;
+    }, 800);
+  }
+}
+
+function advanceLine() {
+  if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+  const next = state.currentLineIndex + 1;
+  if (next >= state.script.lines.length) {
+    stopMic();
+    state.isRunning = false;
+    state.sessionDone = true;
+  } else {
+    state.currentLineIndex = next;
+    state.transcript = "";
+    state.interim = "";
+  }
+  render();
+}
+
+function toggleMic() {
+  if (state.isRunning) {
+    stopMic();
+    state.isRunning = false;
+  } else {
+    if (state.sessionDone) {
+      state.currentLineIndex = 0;
+      state.lineResults = {};
+      state.sessionDone = false;
+    }
+    state.isRunning = true;
+    startMic();
+  }
+  render();
+}
+
+function selectScript(script) {
+  if (state.isRunning) { stopMic(); state.isRunning = false; }
+  state.script = script;
+  state.currentLineIndex = 0;
+  state.lineResults = {};
+  state.sessionDone = false;
+  state.transcript = "";
+  state.interim = "";
+  render();
+}
+
+// ─── RENDER ─────────────────────────────────────────────────────────────────
+
+function render() {
+  const app = document.getElementById("app");
+  const { script, currentLineIndex, lineResults, isRunning, sessionDone, micStatus, noSpeechAPI } = state;
+
+  const fullTranscript = state.interim
+    ? (state.transcript + " " + state.interim).trim()
+    : state.transcript;
+
+  // Build lines HTML
+  const linesHtml = script.lines.map((line, idx) => {
+    const isPast    = idx < currentLineIndex;
+    const isCurrent = idx === currentLineIndex;
+    const isFuture  = idx > currentLineIndex;
+
+    let results = lineResults[line.id];
+    if (!results) {
+      const words = line.text.split(/\s+/).filter(Boolean);
+      results = words.map(w => ({ word: w, status: isPast ? "correct" : "pending" }));
+    }
+
+    const wordsHtml = results.map(r =>
+      `<span class="word ${r.status}">${r.word}</span>`
+    ).join(" ");
+
+    return `
+      <div class="line-card ${isCurrent ? "active" : ""}">
+        <div class="character-label">${line.character}</div>
+        <div class="words-row">${wordsHtml}</div>
+      </div>
+    `;
+  }).join("");
+
+  const doneHtml = sessionDone ? `
+    <div class="done-card">
+      <div class="done-icon">🎭</div>
+      <div class="done-title">Scene Complete</div>
+      <div class="done-sub">Tap Start to go again</div>
+    </div>
+  ` : "";
+
+  const warningHtml = noSpeechAPI ? `
+    <div class="warning">
+      ⚠️ Your browser doesn't support speech recognition. Please use Chrome on Android or desktop.
+    </div>
+  ` : "";
+
+  const transcriptHtml = isRunning ? `
+    <div class="transcript-bar">
+      <span class="transcript-label">Hearing</span>
+      <span class="transcript-text">${fullTranscript || "..."}</span>
+    </div>
+  ` : "";
+
+  const btnClass = micStatus === "listening" ? "listening" : micStatus === "error" ? "error" : "idle";
+  const btnIcon  = micStatus === "listening" ? `<span class="mic-pulse"></span> Stop` : micStatus === "error" ? "⚠ Retry" : "🎙 Start Practice";
+
+  const skipHtml = isRunning && !sessionDone ? `
+    <button class="skip-btn" onclick="skipLine()">skip line →</button>
+  ` : "";
+
+  app.innerHTML = `
+    <div class="header">
+      <span class="header-title">🎭 Theater Practice</span>
+      <span class="header-progress">${sessionDone ? "Complete!" : `${currentLineIndex + 1} / ${script.lines.length}`}</span>
+    </div>
+
+    <div class="script-picker">
+      ${SCRIPTS.map(s => `
+        <button class="script-chip ${s.id === script.id ? "active" : ""}" onclick="selectScript(window.__scripts['${s.id}'])">
+          ${s.title}
+        </button>
+      `).join("")}
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#4ade80"></div>Correct</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>Missed</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3a3a52"></div>Pending</div>
+    </div>
+
+    ${warningHtml}
+
+    <div class="lines-area" id="linesArea">
+      ${linesHtml}
+      ${doneHtml}
+    </div>
+
+    ${transcriptHtml}
+
+    <div class="controls">
+      <button class="mic-btn ${btnClass}" onclick="toggleMic()" ${noSpeechAPI ? "disabled" : ""}>
+        ${btnIcon}
+      </button>
+      ${skipHtml}
+    </div>
+  `;
+
+  // Scroll current line into view
+  setTimeout(() => {
+    const area = document.getElementById("linesArea");
+    const cards = area?.querySelectorAll(".line-card");
+    if (cards && cards[currentLineIndex]) {
+      cards[currentLineIndex].scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, 50);
+}
+
+// Expose scripts for inline onclick
+window.__scripts = Object.fromEntries(SCRIPTS.map(s => [s.id, s]));
+window.toggleMic = toggleMic;
+window.skipLine = () => { advanceLine(); state.transcript = ""; state.interim = ""; render(); };
+window.selectScript = selectScript;
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+initRecognition();
+render();
+</script>
+</body>
+</html>
